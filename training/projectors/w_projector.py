@@ -44,12 +44,12 @@ def project(
         if verbose:
             print(*args)
 
-    G = copy.deepcopy(G).eval().requires_grad_(False).to(device).float()  # type: ignore
+    G = copy.deepcopy(G).eval().requires_grad_(False).to(device).float()  # type: ignore TODO: 修改为eg3d的
 
     # Compute w stats.
     logprint(f'Computing W midpoint and stddev using {w_avg_samples} samples...')
     z_samples = np.random.RandomState(123).randn(w_avg_samples, G.z_dim)
-    w_samples = G.mapping(torch.from_numpy(z_samples).to(device), None)  # [N, L, C]
+    w_samples = G.mapping(torch.from_numpy(z_samples).to(device), None)  # [N, L, C] #TODO C:Condition 改成角度对应角度
     w_samples = w_samples[:, :1, :].cpu().numpy().astype(np.float32)  # [N, 1, C]
     w_avg = np.mean(w_samples, axis=0, keepdims=True)  # [1, 1, C]
     w_avg_tensor = torch.from_numpy(w_avg).to(global_config.device)
@@ -58,7 +58,7 @@ def project(
     start_w = initial_w if initial_w is not None else w_avg
 
     # Setup noise inputs.
-    noise_bufs = {name: buf for (name, buf) in G.synthesis.named_buffers() if 'noise_const' in name}
+    noise_bufs = {name: buf for (name, buf) in G.synthesis.named_buffers() if 'noise_const' in name}#TODO: 有问题 double check noise
 
     # Load VGG16 feature detector.
     url = 'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/metrics/vgg16.pt'
@@ -96,7 +96,7 @@ def project(
         # Synth images from opt_w.
         w_noise = torch.randn_like(w_opt) * w_noise_scale
         ws = (w_opt + w_noise).repeat([1, G.mapping.num_ws, 1])
-        synth_images = G.synthesis(ws, noise_mode='const', force_fp32=True)
+        synth_images = G.synthesis(ws, noise_mode='const', force_fp32=True) #加上角度 输入nerf 否则loss会不一样
 
         # Downsample image to 256x256 if it's larger than that. VGG was built for 224x224 images.
         synth_images = (synth_images + 1) * (255 / 2)
@@ -104,8 +104,8 @@ def project(
             synth_images = F.interpolate(synth_images, size=(256, 256), mode='area')
 
         # Features for synth images.
-        synth_features = vgg16(synth_images, resize_images=False, return_lpips=True)
-        dist = (target_features - synth_features).square().sum()
+        synth_features = vgg16(synth_images, resize_images=False, return_lpips=True) #lpips
+        dist = (target_features - synth_features).square().sum()# l2loss image512
 
         # Noise regularization.
         reg_loss = 0.0
