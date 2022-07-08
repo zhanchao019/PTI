@@ -17,6 +17,7 @@ from tqdm import tqdm
 from configs import global_config, hyperparameters
 from utils import log_utils
 import dnnlib
+import math
 
 
 def project(
@@ -36,20 +37,40 @@ def project(
         use_wandb=False,
         initial_w=None,
         image_log_step=global_config.image_rec_result_log_snapshot,
-        w_name: str
+        w_name: str,
+        pose=None
 ):
+    global camera_params
     assert target.shape == (G.img_channels, G.img_resolution, G.img_resolution)
 
     def logprint(*args):
         if verbose:
             print(*args)
 
-    G = copy.deepcopy(G).eval().requires_grad_(False).to(device).float()  # type: ignore TODO: 修改为eg3d的
+    G = copy.deepcopy(G).eval().requires_grad_(False).to(device).float()
 
     # Compute w stats.
     logprint(f'Computing W midpoint and stddev using {w_avg_samples} samples...')
     z_samples = np.random.RandomState(123).randn(w_avg_samples, G.z_dim)
-    w_samples = G.mapping(torch.from_numpy(z_samples).to(device), None)  # [N, L, C] #TODO C:Condition 改成角度对应角度
+
+    if pose == None:
+        w_samples = G.mapping(torch.from_numpy(z_samples).to(device), None)  # [N, L, C] # TODO C:Condition 改成角度对应角度
+    else:
+        fov_deg=23
+
+        intrinsics = FOV_to_intrinsics(fov_deg, device=device)
+
+        zeroTrans=np.array([0,0,0],dtype=np.float32)
+        pose['angle'][0][2]=-pose['angle'][0][2]
+
+        cam2world_pose_render = np.float32(Get_extrinsics_from_euler_and_translation(pose['angle'][0], zeroTrans))
+        camera_params = torch.cat([torch.tensor(cam2world_pose_render.reshape(-1, 16), device=device),
+                                   torch.tensor(intrinsics.reshape(-1, 9), device=device)], 1)
+        z_samples  = torch.from_numpy(np.random.RandomState(1).randn(1, G.z_dim)).to(device)
+
+        w_samples=G.mapping(z_samples, camera_params, truncation_psi=1.0, truncation_cutoff=14)#0角度传入 gan maping
+
+
     w_samples = w_samples[:, :1, :].cpu().numpy().astype(np.float32)  # [N, 1, C]
     w_avg = np.mean(w_samples, axis=0, keepdims=True)  # [1, 1, C]
     w_avg_tensor = torch.from_numpy(w_avg).to(global_config.device)
@@ -58,7 +79,7 @@ def project(
     start_w = initial_w if initial_w is not None else w_avg
 
     # Setup noise inputs.
-    noise_bufs = {name: buf for (name, buf) in G.synthesis.named_buffers() if 'noise_const' in name}#TODO: 有问题 double check noise
+    noise_bufs = {name: buf for (name, buf) in G.named_buffers() if 'noise_const' in name}#TODO: 有问题 double check noise
 
     # Load VGG16 feature detector.
     url = 'https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/metrics/vgg16.pt'
@@ -96,7 +117,7 @@ def project(
         # Synth images from opt_w.
         w_noise = torch.randn_like(w_opt) * w_noise_scale
         ws = (w_opt + w_noise).repeat([1, G.mapping.num_ws, 1])
-        synth_images = G.synthesis(ws, noise_mode='const', force_fp32=True) #加上角度 输入nerf 否则loss会不一样
+        synth_images = G.synthesis(ws, camera_params,use_cached_backbone=True,cache_backbone=True)['image'] # TODO:加上角度 输入nerf 否则loss会不一样
 
         # Downsample image to 256x256 if it's larger than that. VGG was built for 224x224 images.
         synth_images = (synth_images + 1) * (255 / 2)
@@ -140,3 +161,53 @@ def project(
 
     del G
     return w_opt.repeat([1, 18, 1])
+
+
+def compute_rotation(angles):
+    x, y, z = angles
+    rot_x = np.array([
+        [1, 0, 0],
+        [0, np.cos(x), -np.sin(x)],
+        [0, np.sin(x), np.cos(x)]
+    ])
+    rot_y = np.array([
+        [np.cos(y), 0, np.sin(y)],
+        [0, 1, 0],
+        [-np.sin(y), 0, np.cos(y)]
+    ])
+    rot_z = np.array([
+        [np.cos(z), -np.sin(z), 0],
+        [np.sin(z), np.cos(z), 0],
+        [0, 0, 1]
+    ])
+    return np.matmul(rot_z, np.matmul(rot_y, rot_x))
+
+
+'''
+euler angles and translation are estimated from deep3dfacerecon_pytorch
+'''
+def Get_extrinsics_from_euler_and_translation(euler:np.ndarray, trans:np.ndarray):
+    theta_x, theta_y, theta_z = euler[0], euler[1], euler[2]
+    theta_x = np.pi - theta_x
+    theta_y = -theta_y
+    theta_z = theta_z
+    rot_mat = compute_rotation([theta_x, theta_y, theta_z])
+    trans_x = -trans[0]
+    trans_y = trans[1]
+    trans_z = np.sqrt(2.7 ** 2 - trans_x ** 2 - trans_y ** 2)
+    trans_new = np.matmul(rot_mat, np.array([trans_x, trans_y, trans_z]))
+    mat_4x4 = np.eye(4)
+    mat_4x4[0:3, 0:3] = rot_mat
+    mat_4x4[0:3, 3] = -trans_new
+    return mat_4x4
+
+def FOV_to_intrinsics(fov_degrees, device='cpu'):
+    """
+    Creates a 3x3 camera intrinsics matrix from the camera field of view, specified in degrees.
+    Note the intrinsics are returned as normalized by image size, rather than in pixel units.
+    Assumes principal point is at image center.
+    """
+
+    focal_length = float(1 / (math.tan(fov_degrees * 3.14159 / 360) * 1.414))
+    intrinsics = torch.tensor([[focal_length, 0, 0.5], [0, focal_length, 0.5], [0, 0, 1]], device=device)
+    return intrinsics

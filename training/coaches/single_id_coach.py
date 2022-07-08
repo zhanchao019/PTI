@@ -4,7 +4,11 @@ from tqdm import tqdm
 from configs import paths_config, hyperparameters, global_config
 from training.coaches.base_coach import BaseCoach
 from utils.log_utils import log_images_from_w
+import numpy as np
 
+def get_data_path(root='examples'):
+    im_path = [os.path.join(root, i) for i in sorted(os.listdir(root)) if i.endswith('npy') ]
+    return im_path
 
 class SingleIDCoach(BaseCoach):
 
@@ -21,7 +25,10 @@ class SingleIDCoach(BaseCoach):
 
         for fname, image in tqdm(self.data_loader):
             image_name = fname[0]
+            posefile=paths_config.input_data_pose_path+"/"+fname[0]+".mat.npy"
+            posedetail=np.load(posefile,allow_pickle=True).item()
 
+            
             self.restart_training()
 
             if self.image_counter >= hyperparameters.max_images_to_invert:
@@ -36,7 +43,7 @@ class SingleIDCoach(BaseCoach):
                 w_pivot = self.load_inversions(w_path_dir, image_name)
 
             elif not hyperparameters.use_last_w_pivots or w_pivot is None:
-                w_pivot = self.calc_inversions(image, image_name)
+                w_pivot = self.calc_inversions(image, image_name,posedetail)# 获得图片经过网络得到的W向量
 
             # w_pivot = w_pivot.detach().clone().to(global_config.device)
             w_pivot = w_pivot.to(global_config.device)

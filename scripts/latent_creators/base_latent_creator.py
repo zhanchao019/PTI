@@ -44,7 +44,7 @@ class BaseLatentCreator:
         self.latent_folder_path = f'{base_latent_folder_path}/{method_name}'
         os.makedirs(self.latent_folder_path, exist_ok=True)
 
-        with open(paths_config.stylegan2_ada_ffhq, 'rb') as f:
+        with open(paths_config.stylegan2_eg3d_ffhq, 'rb') as f:
             self.old_G = pickle.load(f)['G_ema'].cuda()
 
     @abc.abstractmethod

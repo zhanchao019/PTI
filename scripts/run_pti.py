@@ -1,9 +1,12 @@
+import sys,os
+sys.path.append(os.getcwd())
+
 from random import choice
 from string import ascii_uppercase
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms
-import os
-from configs import global_config, paths_config
+
+from configs import global_config,paths_config
 import wandb
 
 from training.coaches.multi_id_coach import MultiIDCoach
@@ -45,4 +48,4 @@ def run_PTI(run_name='', use_wandb=False, use_multi_id_training=False):
 
 
 if __name__ == '__main__':
-    run_PTI(run_name='', use_wandb=False, use_multi_id_training=False)
+    run_PTI(run_name='DEMO', use_wandb=False, use_multi_id_training=False)

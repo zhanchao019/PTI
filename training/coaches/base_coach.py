@@ -14,6 +14,8 @@ from criteria import l2_loss
 from models.e4e.psp import pSp
 from utils.log_utils import log_image_from_w
 from utils.models_utils import toogle_grad, load_old_G
+from PIL import Image
+
 
 
 class BaseCoach:
@@ -83,7 +85,7 @@ class BaseCoach:
         self.w_pivots[image_name] = w
         return w
 
-    def calc_inversions(self, image, image_name):
+    def calc_inversions(self, image, image_name,pose_detail=None):
 
         if hyperparameters.first_inv_type == 'w+':
             w = self.get_e4e_inversion(image)
@@ -92,7 +94,7 @@ class BaseCoach:
             id_image = torch.squeeze((image.to(global_config.device) + 1) / 2) * 255
             w = w_projector.project(self.G, id_image, device=torch.device(global_config.device), w_avg_samples=600,
                                     num_steps=hyperparameters.first_inv_steps, w_name=image_name,
-                                    use_wandb=self.use_wandb)
+                                    use_wandb=self.use_wandb,pose=pose_detail)
 
         return w
 
