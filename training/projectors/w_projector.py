@@ -102,6 +102,8 @@ def project(
         buf[:] = torch.randn_like(buf)
         buf.requires_grad = True
 
+    if global_config.debug_mode:
+        num_steps=5
     for step in tqdm(range(num_steps)):
 
         # Learning rate schedule.
@@ -116,7 +118,7 @@ def project(
 
         # Synth images from opt_w.
         w_noise = torch.randn_like(w_opt) * w_noise_scale
-        ws = (w_opt + w_noise).repeat([1, G.mapping.num_ws, 1])
+        ws = (w_opt + w_noise).repeat([1, 14, 1])
         synth_images = G.synthesis(ws, camera_params,use_cached_backbone=True,cache_backbone=True)['image'] # TODO:加上角度 输入nerf 否则loss会不一样
 
         # Downsample image to 256x256 if it's larger than that. VGG was built for 224x224 images.
@@ -149,7 +151,7 @@ def project(
 
         # Step
         optimizer.zero_grad(set_to_none=True)
-        loss.backward()
+        loss.backward(retain_graph=True)
         optimizer.step()
         logprint(f'step {step + 1:>4d}/{num_steps}: dist {dist:<4.2f} loss {float(loss):<5.2f}')
 
@@ -160,7 +162,7 @@ def project(
                 buf *= buf.square().mean().rsqrt()
 
     del G
-    return w_opt.repeat([1, 18, 1])
+    return w_opt.repeat([1, 14, 1])
 
 
 def compute_rotation(angles):

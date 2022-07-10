@@ -15,6 +15,7 @@ from models.e4e.psp import pSp
 from utils.log_utils import log_image_from_w
 from utils.models_utils import toogle_grad, load_old_G
 from PIL import Image
+import numpy as np
 
 
 
@@ -128,10 +129,22 @@ class BaseCoach:
 
         return loss, l2_loss_val, loss_lpips
 
-    def forward(self, w):
-        generated_images = self.G.synthesis(w, noise_mode='const', force_fp32=True)
+    def forward(self, w,pose):
+        if pose!= None:
+            fov_deg = 23
 
-        return generated_images
+            intrinsics = w_projector.FOV_to_intrinsics(fov_deg, device='cuda:0')
+
+            zeroTrans = np.array([0, 0, 0], dtype=np.float32)
+            pose['angle'][0][2] = -pose['angle'][0][2]
+
+            cam2world_pose_render = np.float32(w_projector.Get_extrinsics_from_euler_and_translation(pose['angle'][0], zeroTrans))
+            camera_params = torch.cat([torch.tensor(cam2world_pose_render.reshape(-1, 16), device='cuda:0'),
+                                       torch.tensor(intrinsics.reshape(-1, 9), device='cuda:0')], 1)
+            generated_images = self.G.synthesis(w,camera_params, noise_mode='const', force_fp32=True)
+
+            return generated_images
+        return None
 
     def initilize_e4e(self):
         ckpt = torch.load(paths_config.e4e, map_location='cpu')

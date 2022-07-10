@@ -23,6 +23,7 @@ class SingleIDCoach(BaseCoach):
 
         use_ball_holder = True
 
+
         for fname, image in tqdm(self.data_loader):
             image_name = fname[0]
             posefile=paths_config.input_data_pose_path+"/"+fname[0]+".mat.npy"
@@ -54,8 +55,8 @@ class SingleIDCoach(BaseCoach):
 
             for i in tqdm(range(hyperparameters.max_pti_steps)):
 
-                generated_images = self.forward(w_pivot)
-                loss, l2_loss_val, loss_lpips = self.calc_loss(generated_images, real_images_batch, image_name,
+                generated_images = self.forward(w_pivot,posedetail)
+                loss, l2_loss_val, loss_lpips = self.calc_loss(generated_images['image'], real_images_batch, image_name,
                                                                self.G, use_ball_holder, w_pivot)
 
                 self.optimizer.zero_grad()

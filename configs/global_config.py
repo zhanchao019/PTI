@@ -10,3 +10,4 @@ model_snapshot_interval = 400
 
 ## Run name to be updated during PTI
 run_name = ''
+debug_mode=False
